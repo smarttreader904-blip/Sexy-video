@@ -10,20 +10,9 @@ MAX_DURATION = 180  # 3 minutes
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = """
-🎬 Welcome to Shorts Downloader Bot!
-
-━━━━━━━━━━━━━━
-📥 Download YouTube Shorts
-⚡ Fast Download Speed
-🎞 HD Quality Supported
-🗑 Auto File Delete
-🕒 Only videos up to 3 minutes
-━━━━━━━━━━━━━━
-
-🔗 Send your YouTube Shorts link now.
-"""
-    await update.message.reply_text(text)
+    await update.message.reply_text(
+        "Send a YouTube Shorts link.\nOnly videos up to 3 minutes are allowed."
+    )
 
 
 def get_video_info(url):
@@ -37,9 +26,7 @@ async def handle_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if "youtube.com" not in url and "youtu.be" not in url:
         return
 
-    msg = await update.message.reply_text(
-"🔍 Analyzing your video...\n⏳ Please wait."
-)
+    msg = await update.message.reply_text("Checking video...")
 
     try:
         info = get_video_info(url)
@@ -60,16 +47,12 @@ async def handle_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "quiet": True,
         }
 
-        await msg.edit_text(
-"⬇️ Downloading your Shorts...\n🚀 Processing video..."
-)
+        await msg.edit_text("⬇️ Downloading...")
 
         with YoutubeDL(ydl_opts) as ydl:
             ydl.download([url])
 
-        await msg.edit_text(
-"📤 Uploading to Telegram...\n✨ Almost done..."
-)
+        await msg.edit_text("📤 Uploading...")
 
         with open(unique_name, "rb") as video:
             await update.message.reply_video(video=video)
