@@ -25,11 +25,10 @@ from database import (
     total_users
 )
 
-# ================= BOT INIT =================
+# ================= INIT =================
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
 
-# ================= DATA =================
 SERVICES = ["WhatsApp", "Telegram", "TikTok", "Facebook"]
 
 COUNTRIES = ["Bangladesh", "India", "Pakistan", "USA", "UK", "Other"]
@@ -60,20 +59,20 @@ async def start_cmd(message: Message):
 🎉 Welcome {message.from_user.first_name}
 
 ━━━━━━━━━━━━━━
-🔥 Method Sharing Bot
-🌍 Multiple Countries
+🔥 Method Bot
+🌍 Countries Supported
 ⚡ Fast System
 ━━━━━━━━━━━━━━
 
-👇 Select Service
+👇 Select Option
 """,
         reply_markup=main_menu()
     )
 
 
-# ================= SERVICE SELECT =================
+# ================= SERVICE =================
 @dp.callback_query(F.data.startswith("service_"))
-async def service_selected(call: CallbackQuery):
+async def service(call: CallbackQuery):
 
     service = call.data.split("_")[1]
 
@@ -82,28 +81,26 @@ async def service_selected(call: CallbackQuery):
         for c in COUNTRIES
     ]
 
-    keyboard.append(
-        [InlineKeyboardButton(text="🏠 Main Menu", callback_data="main_menu")]
-    )
+    keyboard.append([InlineKeyboardButton(text="🏠 Main Menu", callback_data="main_menu")])
 
     await call.message.edit_text(
-        f"📌 Service: {service}\n\n🌍 Select Country",
+        f"📲 Service: {service}\n\n🌍 Select Country",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard)
     )
 
 
-# ================= COUNTRY SELECT =================
+# ================= COUNTRY =================
 @dp.callback_query(F.data.startswith("country_"))
-async def country_selected(call: CallbackQuery):
+async def country(call: CallbackQuery):
 
     _, service, country = call.data.split("_")
 
     methods = await get_methods(service, country)
 
     if not methods:
-        text = f"❌ No Method Found\n\n📲 {service}\n🌍 {country}"
+        text = f"❌ No Methods\n\n{service} | {country}"
     else:
-        text = f"✅ Methods\n\n📲 {service}\n🌍 {country}\n\n"
+        text = f"✅ Methods\n\n{service} | {country}\n\n"
         for i, m in enumerate(methods, 1):
             text += f"{i}. {m[0]}\n"
 
@@ -117,13 +114,10 @@ async def country_selected(call: CallbackQuery):
     )
 
 
-# ================= MAIN MENU =================
+# ================= MAIN =================
 @dp.callback_query(F.data == "main_menu")
-async def main_menu_back(call: CallbackQuery):
-    await call.message.edit_text(
-        "🏠 Main Menu",
-        reply_markup=main_menu()
-    )
+async def main(call: CallbackQuery):
+    await call.message.edit_text("🏠 Main Menu", reply_markup=main_menu())
 
 
 # ================= SUPPORT =================
@@ -132,9 +126,7 @@ async def support(call: CallbackQuery):
     await call.message.edit_text(
         "🆘 Support: @YOUR_USERNAME",
         reply_markup=InlineKeyboardMarkup(
-            inline_keyboard=[
-                [InlineKeyboardButton(text="🏠 Main Menu", callback_data="main_menu")]
-            ]
+            inline_keyboard=[[InlineKeyboardButton(text="🏠 Main Menu", callback_data="main_menu")]]
         )
     )
 
@@ -146,8 +138,9 @@ class AddMethod(StatesGroup):
     method = State()
 
 
+# ================= ADD METHOD =================
 @dp.callback_query(F.data == "add_method")
-async def add_method(call: CallbackQuery):
+async def add_method_menu(call: CallbackQuery):
 
     keyboard = [
         [InlineKeyboardButton(text=s, callback_data=f"addservice_{s}")]
@@ -164,7 +157,6 @@ async def add_method(call: CallbackQuery):
 async def add_service(call: CallbackQuery, state: FSMContext):
 
     service = call.data.split("_")[1]
-
     await state.update_data(service=service)
 
     keyboard = [
@@ -185,39 +177,54 @@ async def add_country(call: CallbackQuery, state: FSMContext):
 
     if country == "Other":
         await state.set_state(AddMethod.country)
-        await call.message.answer("🌍 Send Country Name:")
+        await call.message.answer("🌍 Send Country Name")
         return
 
     await state.update_data(country=country)
     await state.set_state(AddMethod.method)
 
-    await call.message.answer("📝 Send Method Text:")
+    await call.message.answer("📝 Send Method Text")
 
 
+# ================= OTHER COUNTRY =================
 @dp.message(AddMethod.country)
 async def other_country(message: Message, state: FSMContext):
 
     await state.update_data(country=message.text)
     await state.set_state(AddMethod.method)
 
-    await message.answer("📝 Send Method Text:")
+    await message.answer("📝 Send Method Text")
 
 
+# ================= SAVE METHOD (IMPORTANT FIX) =================
 @dp.message(AddMethod.method)
 async def save_method(message: Message, state: FSMContext):
 
     data = await state.get_data()
 
-    await add_pending(
-        message.from_user.id,
-        data["service"],
-        data["country"],
-        message.text
-    )
+    service = data["service"]
+    country = data["country"]
+    text = message.text
+
+    # ================= ADMIN DIRECT ADD =================
+    if message.from_user.id in ADMINS:
+
+        await add_method(service, country, text)
+
+        await message.answer("✅ Admin Method Added Directly")
+
+    else:
+
+        await add_pending(
+            message.from_user.id,
+            service,
+            country,
+            text
+        )
+
+        await message.answer("⏳ Sent to Admin for Approval")
 
     await state.clear()
-
-    await message.answer("⏳ Sent to Admin for Approval")
 
 
 # ================= ADMIN PANEL =================
@@ -225,13 +232,12 @@ async def save_method(message: Message, state: FSMContext):
 async def admin(call: CallbackQuery):
 
     if call.from_user.id not in ADMINS:
-        return await call.answer("Not Admin", show_alert=True)
+        return await call.answer("❌ Not Admin", show_alert=True)
 
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="📋 Pending", callback_data="pending")],
             [InlineKeyboardButton(text="📊 Stats", callback_data="stats")],
-            [InlineKeyboardButton(text="📢 Broadcast", callback_data="broadcast")]
         ]
     )
 
@@ -260,7 +266,7 @@ async def pending(call: CallbackQuery):
         )
 
         await call.message.answer(
-            f"{service} | {country}\n\n{method}",
+            f"👤 {uid}\n📲 {service}\n🌍 {country}\n\n{method}",
             reply_markup=keyboard
         )
 
@@ -298,39 +304,6 @@ async def stats(call: CallbackQuery):
     users = await total_users()
 
     await call.message.edit_text(f"👥 Users: {users}")
-
-
-# ================= BROADCAST =================
-class Broadcast(StatesGroup):
-    text = State()
-
-
-@dp.callback_query(F.data == "broadcast")
-async def bc_start(call: CallbackQuery, state: FSMContext):
-
-    await state.set_state(Broadcast.text)
-    await call.message.answer("Send Message")
-
-
-@dp.message(Broadcast.text)
-async def bc_send(message: Message, state: FSMContext):
-
-    async with aiosqlite.connect("users.db") as db:
-        users = await db.execute("SELECT user_id FROM users")
-        users = await users.fetchall()
-
-    sent = 0
-
-    for u in users:
-        try:
-            await bot.send_message(u[0], message.text)
-            sent += 1
-        except:
-            pass
-
-    await state.clear()
-
-    await message.answer(f"Sent: {sent}")
 
 
 # ================= MAIN =================
