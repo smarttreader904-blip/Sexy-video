@@ -7,6 +7,7 @@ const bot = new Telegraf(config.BOT_TOKEN);
 // memory
 const users = new Map();
 const userVideos = new Map();
+const savedMedia = new Map(); // NEW ADDED
 
 /* ================= START ================= */
 bot.start(async (ctx) => {
@@ -39,7 +40,7 @@ You can now use the bot. Send a TikTok link to download video 📥`
 bot.action("joined_check", (ctx) => {
   users.set(ctx.from.id, "joined");
 
-  return ctx.reply(
+  ctx.reply(
 `✅ Welcome!
 
 🇧🇩 বাংলায়:
@@ -49,7 +50,15 @@ TikTok ভিডিও ডাউনলোড করতে ভিডিও লি
 🇬🇧 English:
 You can now use the bot. Send a TikTok link to download video 📥`
   );
-}); // ✅ FIXED BRACKET HERE
+
+  // MENU BUTTON (NEW)
+  ctx.reply(
+    "📁 Menu:",
+    Markup.keyboard([
+      ["📁 Media Save Video"]
+    ]).resize()
+  );
+});
 
 /* ================= VIDEO API ================= */
 async function getVideo(url) {
@@ -82,6 +91,23 @@ bot.on("text", async (ctx) => {
     return ctx.reply("❌ Please join first and click I Joined button!");
   }
 
+  // MENU CLICK HANDLER
+  if (url === "📁 Media Save Video") {
+    const list = savedMedia.get(id);
+
+    if (!list || list.length === 0) {
+      return ctx.reply("❌ No saved media found!");
+    }
+
+    for (let i = 0; i < list.length; i++) {
+      await ctx.replyWithVideo(list[i], {
+        caption: `📁 Saved Video #${i + 1}`
+      });
+    }
+
+    return;
+  }
+
   if (!url.includes("tiktok.com")) {
     return ctx.reply("❌ Please send a valid TikTok link!");
   }
@@ -103,6 +129,7 @@ bot.on("text", async (ctx) => {
         "📥 Download Completed Successfully!\n🎬 Your video is ready to watch and save.\n\n🎧 Want only MP3? Click button below",
       reply_markup: {
         inline_keyboard: [
+          [{ text: "💾 Save Media", callback_data: "save_media" }],
           [{ text: "📩 Support ID", url: "https://t.me/Smart_Method_Owner" }],
           [{ text: "👥 Support Team", url: "https://www.tiktok.com/@mdraju_3m" }],
           [{ text: "🟢 Need MP3", callback_data: "get_mp3" }]
@@ -110,6 +137,24 @@ bot.on("text", async (ctx) => {
       }
     }
   );
+});
+
+/* ================= SAVE MEDIA ================= */
+bot.action("save_media", (ctx) => {
+  const id = ctx.from.id;
+  const data = userVideos.get(id);
+
+  if (!data?.video) {
+    return ctx.reply("❌ No video found!");
+  }
+
+  if (!savedMedia.has(id)) {
+    savedMedia.set(id, []);
+  }
+
+  savedMedia.get(id).push(data.video);
+
+  return ctx.answerCbQuery("📌 Video saved successfully!");
 });
 
 /* ================= MP3 ================= */
