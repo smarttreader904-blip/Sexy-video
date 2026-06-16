@@ -3,17 +3,14 @@ import uuid
 import sqlite3
 from yt_dlp import YoutubeDL
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup
-from telegram.ext import (
-    Application, CommandHandler, MessageHandler,
-    CallbackQueryHandler, ContextTypes, filters
-)
+from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
 
 BOT_TOKEN = "8859975301:AAEqR6ut9U_Vh77slUhAj5RdbwQmt2OoTXk"
 
-MAX_DURATION = 180
+MAX_DURATION = 180  # optional limit (3 min)
 
 # ---------------- DATABASE ----------------
-conn = sqlite3.connect("videos.db", check_same_thread=False)
+conn = sqlite3.connect("tiktok_videos.db", check_same_thread=False)
 cursor = conn.cursor()
 
 cursor.execute("""
@@ -28,7 +25,7 @@ conn.commit()
 
 # ---------------- MENU ----------------
 menu = ReplyKeyboardMarkup(
-    [["📥 Send Link", "📁 Saved Videos"]],
+    [["📥 Send TikTok Link", "📁 Saved Videos"]],
     resize_keyboard=True
 )
 
@@ -36,18 +33,18 @@ menu = ReplyKeyboardMarkup(
 # ---------------- START ----------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "Welcome to Video Bot!\nSend YouTube Shorts link.",
+        "🎬 TikTok Video Bot Ready!\nSend TikTok link.",
         reply_markup=menu
     )
 
 
-# ---------------- GET VIDEO INFO ----------------
+# ---------------- GET INFO ----------------
 def get_info(url):
     with YoutubeDL({"quiet": True}) as ydl:
         return ydl.extract_info(url, download=False)
 
 
-# ---------------- HANDLE LINK ----------------
+# ---------------- HANDLE MESSAGE ----------------
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
 
@@ -55,17 +52,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await show_saved(update, context)
         return
 
-    if "youtube.com" not in text and "youtu.be" not in text:
+    if "tiktok.com" not in text:
         return
 
-    msg = await update.message.reply_text("Checking...")
+    msg = await update.message.reply_text("Checking video...")
 
     try:
         info = get_info(text)
         duration = info.get("duration", 0)
 
-        if duration > MAX_DURATION:
-            await msg.edit_text("❌ Only Shorts / videos under 3 min allowed.")
+        if duration and duration > MAX_DURATION:
+            await msg.edit_text("❌ Video too long (only short videos allowed).")
             return
 
         file_name = f"{uuid.uuid4()}.mp4"
@@ -73,10 +70,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ydl_opts = {
             "format": "mp4/best",
             "outtmpl": file_name,
-            "quiet": True
+            "quiet": True,
         }
 
-        await msg.edit_text("⬇️ Downloading...")
+        await msg.edit_text("⬇️ Downloading TikTok video...")
 
         with YoutubeDL(ydl_opts) as ydl:
             ydl.download([text])
@@ -90,14 +87,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         with open(file_name, "rb") as video:
             sent = await update.message.reply_video(
                 video=video,
-                caption="Your video is ready",
+                caption="🎬 TikTok Video Ready",
                 reply_markup=keyboard
             )
 
-        # store temp mapping
         context.bot_data[file_name] = {
             "file_id": sent.video.file_id,
-            "title": info.get("title", "No Title")
+            "title": info.get("title", "TikTok Video")
         }
 
         await msg.delete()
@@ -114,7 +110,6 @@ async def save_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
 
     key = query.data
-
     data = context.bot_data.get(key)
 
     if not data:
@@ -127,9 +122,7 @@ async def save_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     conn.commit()
 
-    await query.edit_message_caption(
-        caption="💾 Saved successfully!"
-    )
+    await query.edit_message_caption("💾 Saved Successfully!")
 
 
 # ---------------- SHOW SAVED ----------------
@@ -138,7 +131,7 @@ async def show_saved(update: Update, context: ContextTypes.DEFAULT_TYPE):
     rows = cursor.fetchall()
 
     if not rows:
-        await update.message.reply_text("No saved videos found.")
+        await update.message.reply_text("No saved videos yet.")
         return
 
     for file_id, title in rows:
@@ -156,7 +149,7 @@ def main():
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(CallbackQueryHandler(save_video))
 
-    print("Bot running...")
+    print("TikTok Bot Running...")
     app.run_polling()
 
 
