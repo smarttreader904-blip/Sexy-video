@@ -76,21 +76,21 @@ async def handle_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
         with open(unique_name, "rb") as video:
             await update.message.reply_video(video=video)
 
-        # Success message
+        if os.path.exists(unique_name):
+            os.remove(unique_name)
+
+        await msg.delete()
+
         await update.message.reply_text(
             "✅ Download Complete!\n\n"
             "🎬 Your video is ready.\n"
             "📥 Send another Shorts link."
         )
 
-        # Cleanup
-        if os.path.exists(unique_name):
-            os.remove(unique_name)
-
-        await msg.delete()
-
     except Exception as e:
-        await msg.edit_text(f"❌ Error: {str(e)}")
+        await msg.edit_text(
+            f"❌ Error!\n\n{str(e)}"
+        )
 
 
 def main():
@@ -98,7 +98,7 @@ def main():
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(
-        MessageHandler(filters.TEXT & \~filters.COMMAND, handle_link)
+        MessageHandler(filters.TEXT & ~filters.COMMAND, handle_link)
     )
 
     print("Bot Started...")
