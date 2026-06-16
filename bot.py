@@ -8,7 +8,7 @@ from telegram.ext import (
     CallbackQueryHandler, ContextTypes, filters
 )
 
-BOT_TOKEN = "PASTE_YOUR_BOT_TOKEN"
+BOT_TOKEN = "8859975301:AAEqR6ut9U_Vh77slUhAj5RdbwQmt2OoTXk"
 
 MAX_DURATION = 180
 
