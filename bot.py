@@ -3,8 +3,9 @@ from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
 
 BOT_TOKEN = "8859975301:AAEqR6ut9U_Vh77slUhAj5RdbwQmt2OoTXk"
-
 ADMIN_ID = 8559227368
+
+PASSWORD = "904"   # 🔐 Change your password here
 
 # ---------------- DATABASE ----------------
 conn = sqlite3.connect("database.db", check_same_thread=False)
@@ -30,54 +31,65 @@ menu = ReplyKeyboardMarkup(
 )
 
 
-# ---------------- ADMIN CHECK ----------------
+# ---------------- CHECK AUTH ----------------
 def is_admin(user_id):
     return user_id == ADMIN_ID
 
 
+def is_logged_in(context):
+    return context.user_data.get("auth") == True
+
+
 # ---------------- START ----------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_admin(update.effective_user.id):
-        await update.message.reply_text("❌ You are not authorized to use this bot.")
+    user_id = update.effective_user.id
+
+    if user_id != ADMIN_ID:
+        await update.message.reply_text("❌ You are not authorized.")
         return
 
-    msg = """
-━━━━━━━━━━━━━━━
-👋 Welcome to Admin Vault Bot
-━━━━━━━━━━━━━━━
+    context.user_data["auth"] = False
 
-📌 This is your private storage system.
-
-Use the buttons below:
-"""
-    await update.message.reply_text(msg, reply_markup=menu)
+    await update.message.reply_text(
+        "🔐 Enter your password to access the bot:"
+    )
 
 
-# ---------------- MENU HANDLER ----------------
-async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_admin(update.effective_user.id):
-        return
-
+# ---------------- PASSWORD CHECK ----------------
+async def password_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
     text = update.message.text
 
-    # -------- SAVE MODE --------
+    if user_id != ADMIN_ID:
+        return
+
+    # If not logged in → treat as password
+    if not is_logged_in(context):
+        if text == PASSWORD:
+            context.user_data["auth"] = True
+            await update.message.reply_text(
+                "✅ Login successful!",
+                reply_markup=menu
+            )
+        else:
+            await update.message.reply_text("❌ Wrong password!")
+        return
+
+
+    # ---------------- MENU ----------------
     if text == "📁 Save Gallery":
         context.user_data["save_mode"] = True
-
         await update.message.reply_text(
-            "📥 Send anything:\n\n"
-            "✔ Video\n✔ Photo\n✔ Voice\n✔ Text\n\n"
-            "It will be saved automatically."
+            "📥 Send video/photo/voice/text to save."
         )
         return
 
-    # -------- SHOW MEMORY --------
     if text == "📂 Show Memory":
-        cursor.execute("SELECT type, file_id, text FROM storage ORDER BY id DESC")
+        cursor.execute("SELECT type,file_id,text FROM storage ORDER BY id DESC")
         rows = cursor.fetchall()
 
         if not rows:
-            await update.message.reply_text("📭 No saved memory found.")
+            await update.message.reply_text("📭 No data found.")
             return
 
         for t, file_id, txt in rows:
@@ -90,12 +102,13 @@ async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             else:
                 await update.message.reply_text(txt or "")
 
+
+# ---------------- SAVE DATA ----------------
+async def save_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
         return
 
-
-# ---------------- SAVE HANDLER ----------------
-async def save_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_admin(update.effective_user.id):
+    if not is_logged_in(context):
         return
 
     if not context.user_data.get("save_mode"):
@@ -103,40 +116,32 @@ async def save_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     msg = update.message
 
-    # VIDEO
     if msg.video:
-        file_id = msg.video.file_id
-        cursor.execute("INSERT INTO storage (type,file_id,text) VALUES (?,?,?)",
-                       ("video", file_id, "Saved Video"))
+        cursor.execute("INSERT INTO storage VALUES (NULL,?,?,?)",
+                       ("video", msg.video.file_id, "Video"))
         conn.commit()
-        await msg.reply_text("💾 Video saved!")
+        await msg.reply_text("💾 Saved Video")
         return
 
-    # PHOTO
     if msg.photo:
-        file_id = msg.photo[-1].file_id
-        cursor.execute("INSERT INTO storage (type,file_id,text) VALUES (?,?,?)",
-                       ("photo", file_id, "Saved Photo"))
+        cursor.execute("INSERT INTO storage VALUES (NULL,?,?,?)",
+                       ("photo", msg.photo[-1].file_id, "Photo"))
         conn.commit()
-        await msg.reply_text("💾 Photo saved!")
+        await msg.reply_text("💾 Saved Photo")
         return
 
-    # VOICE
     if msg.voice:
-        file_id = msg.voice.file_id
-        cursor.execute("INSERT INTO storage (type,file_id,text) VALUES (?,?,?)",
-                       ("voice", file_id, "Saved Voice"))
+        cursor.execute("INSERT INTO storage VALUES (NULL,?,?,?)",
+                       ("voice", msg.voice.file_id, "Voice"))
         conn.commit()
-        await msg.reply_text("💾 Voice saved!")
+        await msg.reply_text("💾 Saved Voice")
         return
 
-    # TEXT
     if msg.text:
-        cursor.execute("INSERT INTO storage (type,file_id,text) VALUES (?,?,?)",
+        cursor.execute("INSERT INTO storage VALUES (NULL,?,?,?)",
                        ("text", "", msg.text))
         conn.commit()
-        await msg.reply_text("💾 Text saved!")
-        return
+        await msg.reply_text("💾 Saved Text")
 
 
 # ---------------- MAIN ----------------
@@ -144,10 +149,14 @@ def main():
     app = Application.builder().token(BOT_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, menu_handler))
+
+    # password + menu
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, password_handler))
+
+    # media save
     app.add_handler(MessageHandler(filters.ALL, save_handler))
 
-    print("Admin Vault Bot Running...")
+    print("Bot running...")
     app.run_polling()
 
 
