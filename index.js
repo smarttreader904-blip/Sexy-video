@@ -47,13 +47,9 @@ ctx.reply(
 
 🇧🇩 বাংলায়:
 আপনি এখন বট ব্যবহার করতে পারবেন।
-TikTok / YouTube Shorts ভিডিও ডাউনলোড করতে লিংক পাঠান 📥
-
-🇬🇧 English:
-You can now use the bot. Send a TikTok or YouTube Shorts link 📥`
+TikTok / YouTube Shorts ভিডিও ডাউনলোড করতে লিংক পাঠান 📥`
 );
 
-// MENU
 ctx.reply(
 "📁 Menu:",
 Markup.keyboard([
@@ -82,11 +78,12 @@ return null;
 }
 }
 
-/* ================= YOUTUBE DOWNLOAD (STABLE) ================= */
+/* ================= YOUTUBE ================= */
 function getYouTube(url, callback) {
 const file = `yt_${Date.now()}.mp4`;
 
-const cmd = `yt-dlp -f "mp4/best" -o "${file}" "${url}"`;
+// FIXED yt-dlp command
+const cmd = `yt-dlp -f "best[ext=mp4]/best" -o "${file}" "${url}"`;
 
 exec(cmd, (err) => {
 if (err) {
@@ -128,13 +125,13 @@ caption: `📁 Saved Video #${i + 1}`
 return;
 }
 
-/* ================= YOUTUBE ================= */
+/* ================= YOUTUBE CHECK ================= */
 if (url.includes("youtube.com") || url.includes("youtu.be")) {
 
 ctx.reply("⏳ Downloading YouTube Shorts...");
 
 return getYouTube(url, async (data) => {
-if (!data?.video) return ctx.reply("❌ Failed to download!");
+if (!data?.video) return ctx.reply("❌ Failed to download YouTube video!");
 
 userVideos.set(id, data);
 
@@ -161,7 +158,7 @@ ctx.reply("⏳ Downloading TikTok video...");
 const data = await getTikTok(url);
 
 if (!data?.video) {
-return ctx.reply("❌ Failed to download!");
+return ctx.reply("❌ Failed to download TikTok video!");
 }
 
 userVideos.set(id, data);
@@ -186,7 +183,7 @@ const id = ctx.from.id;
 const data = userVideos.get(id);
 
 if (!data?.video) {
-return ctx.reply("❌ No video found!");
+return ctx.answerCbQuery("❌ No video found!");
 }
 
 if (!savedMedia.has(id)) {
@@ -222,9 +219,12 @@ if (!data?.audio) {
 return ctx.reply("❌ No audio found!");
 }
 
-return ctx.replyWithAudio({ url: data.audio }, {
+return ctx.replyWithAudio(
+{ url: data.audio },
+{
 caption: "🎧 MP3 Downloaded Successfully!"
-});
+}
+);
 });
 
 /* ================= ERROR ================= */
