@@ -1,157 +1,172 @@
-import os
-import uuid
-import sqlite3
-from yt_dlp import YoutubeDL
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup
-from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
+const { Telegraf, Markup } = require("telegraf");
+const axios = require("axios");
+const config = require("./config");
 
-BOT_TOKEN = "8859975301:AAEqR6ut9U_Vh77slUhAj5RdbwQmt2OoTXk"
+const bot = new Telegraf(config.BOT_TOKEN);
 
-MAX_DURATION = 180  # optional limit (3 min)
+// memory
+const users = new Map();
+const userVideos = new Map();
+const savedMedia = new Map(); // NEW: saved system
 
-# ---------------- DATABASE ----------------
-conn = sqlite3.connect("tiktok_videos.db", check_same_thread=False)
-cursor = conn.cursor()
+/* ================= START ================= */
+bot.start(async (ctx) => {
+  const id = ctx.from.id;
 
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS videos (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    file_id TEXT,
-    title TEXT
-)
-""")
-conn.commit()
+  if (users.get(id) === "joined") {
+    return ctx.reply(
+`✅ Welcome!
 
+🇧🇩 বাংলায়:
+আপনি এখন বট ব্যবহার করতে পারবেন।
+TikTok ভিডিও ডাউনলোড করতে ভিডিও লিংক পাঠান 📥
 
-# ---------------- MENU ----------------
-menu = ReplyKeyboardMarkup(
-    [["📥 Send TikTok Link", "📁 Saved Videos"]],
-    resize_keyboard=True
-)
+🇬🇧 English:
+You can now use the bot. Send a TikTok link to download video 📥`
+    );
+  }
 
+  return ctx.reply(
+    "👋 Welcome!\n\nPlease join our channels to use the bot:",
+    Markup.inlineKeyboard([
+      [Markup.button.url("🌍 Global Channel", "https://t.me/Global_Method_Channel")],
+      [Markup.button.url("📩 Support Owner", "https://t.me/Smart_Method_Owner")],
+      [Markup.button.callback("✅ I Joined", "joined_check")]
+    ])
+  );
+});
 
-# ---------------- START ----------------
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "🎬 TikTok Video Bot Ready!\nSend TikTok link.",
-        reply_markup=menu
-    )
+/* ================= JOIN ================= */
+bot.action("joined_check", (ctx) => {
+  users.set(ctx.from.id, "joined");
 
+  return ctx.reply(
+`✅ Welcome!
 
-# ---------------- GET INFO ----------------
-def get_info(url):
-    with YoutubeDL({"quiet": True}) as ydl:
-        return ydl.extract_info(url, download=False)
+🇧🇩 বাংলায়:
+আপনি এখন বট ব্যবহার করতে পারবেন।
+TikTok ভিডিও ডাউনলোড করতে ভিডিও লিংক পাঠান 📥
 
+🇬🇧 English:
+You can now use the bot. Send a TikTok link to download video 📥`
+  );
+});
 
-# ---------------- HANDLE MESSAGE ----------------
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text
+/* ================= VIDEO API ================= */
+async function getVideo(url) {
+  try {
+    const api = `https://www.tikwm.com/api/?url=${encodeURIComponent(url)}`;
+    const res = await axios.get(api);
 
-    if text == "📁 Saved Videos":
-        await show_saved(update, context)
-        return
+    if (res?.data?.data?.play) {
+      return {
+        video: res.data.data.play,
+        audio: res.data.data.music
+      };
+    }
 
-    if "tiktok.com" not in text:
-        return
+    return null;
+  } catch (err) {
+    console.log("Download error:", err.message);
+    return null;
+  }
+}
 
-    msg = await update.message.reply_text("Checking video...")
+/* ================= MESSAGE HANDLER ================= */
+bot.on("text", async (ctx) => {
+  const id = ctx.from.id;
+  const url = ctx.message.text;
 
-    try:
-        info = get_info(text)
-        duration = info.get("duration", 0)
+  if (url.startsWith("/")) return;
 
-        if duration and duration > MAX_DURATION:
-            await msg.edit_text("❌ Video too long (only short videos allowed).")
-            return
+  if (users.get(id) !== "joined") {
+    return ctx.reply("❌ Please join first and click I Joined button!");
+  }
 
-        file_name = f"{uuid.uuid4()}.mp4"
+  if (!url.includes("tiktok.com")) {
+    return ctx.reply("❌ Please send a valid TikTok link!");
+  }
 
-        ydl_opts = {
-            "format": "mp4/best",
-            "outtmpl": file_name,
-            "quiet": True,
-        }
+  ctx.reply("⏳ Downloading TikTok video...");
 
-        await msg.edit_text("⬇️ Downloading TikTok video...")
+  const data = await getVideo(url);
 
-        with YoutubeDL(ydl_opts) as ydl:
-            ydl.download([text])
+  if (!data?.video) {
+    return ctx.reply("❌ Failed to download video!");
+  }
 
-        await msg.edit_text("📤 Uploading...")
+  userVideos.set(id, data);
 
-        keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("💾 Save Video", callback_data=file_name)]
-        ])
+  return ctx.replyWithVideo(
+    { url: data.video },
+    {
+      caption:
+        "📥 Download Completed Successfully!\n🎬 Your video is ready to watch and save.\n\n🎧 Want only MP3? Click button below",
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: "💾 Media Save", callback_data: "save_media" }], // NEW BUTTON
+          [{ text: "📩 Support ID", url: "https://t.me/Smart_Method_Owner" }],
+          [{ text: "👥 Support Team", url: "https://www.tiktok.com/@mdraju_3m" }],
+          [{ text: "🟢 Need MP3", callback_data: "get_mp3" }]
+        ]
+      }
+    }
+  );
+});
 
-        with open(file_name, "rb") as video:
-            sent = await update.message.reply_video(
-                video=video,
-                caption="🎬 TikTok Video Ready",
-                reply_markup=keyboard
-            )
+/* ================= SAVE MEDIA ================= */
+bot.action("save_media", (ctx) => {
+  const id = ctx.from.id;
+  const data = userVideos.get(id);
 
-        context.bot_data[file_name] = {
-            "file_id": sent.video.file_id,
-            "title": info.get("title", "TikTok Video")
-        }
+  if (!data?.video) {
+    return ctx.reply("❌ No video found to save!");
+  }
 
-        await msg.delete()
+  if (!savedMedia.has(id)) {
+    savedMedia.set(id, []);
+  }
 
-        os.remove(file_name)
+  savedMedia.get(id).push(data.video);
 
-    except Exception as e:
-        await msg.edit_text(f"Error: {str(e)}")
+  return ctx.reply("💾 Media saved successfully!");
+});
 
+/* ================= SHOW SAVED MEDIA ================= */
+bot.command("saved", (ctx) => {
+  const id = ctx.from.id;
+  const list = savedMedia.get(id);
 
-# ---------------- SAVE VIDEO ----------------
-async def save_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
+  if (!list || list.length === 0) {
+    return ctx.reply("❌ No saved media found!");
+  }
 
-    key = query.data
-    data = context.bot_data.get(key)
+  list.forEach((videoUrl, i) => {
+    ctx.replyWithVideo(videoUrl, {
+      caption: `📁 Saved Media #${i + 1}`
+    });
+  });
+});
 
-    if not data:
-        await query.edit_message_text("❌ Video expired.")
-        return
+/* ================= MP3 ================= */
+bot.action("get_mp3", async (ctx) => {
+  const data = userVideos.get(ctx.from.id);
 
-    cursor.execute(
-        "INSERT INTO videos (file_id, title) VALUES (?, ?)",
-        (data["file_id"], data["title"])
-    )
-    conn.commit()
+  if (!data?.audio) {
+    return ctx.reply("❌ No audio found! Send video again.");
+  }
 
-    await query.edit_message_caption("💾 Saved Successfully!")
+  return ctx.replyWithAudio(
+    { url: data.audio },
+    {
+      caption: "🎧 MP3 Downloaded Successfully!"
+    }
+  );
+});
 
+/* ================= ERROR ================= */
+bot.catch((err) => console.log("Bot Error:", err));
 
-# ---------------- SHOW SAVED ----------------
-async def show_saved(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    cursor.execute("SELECT file_id, title FROM videos ORDER BY id DESC")
-    rows = cursor.fetchall()
+bot.launch();
 
-    if not rows:
-        await update.message.reply_text("No saved videos yet.")
-        return
-
-    for file_id, title in rows:
-        await update.message.reply_video(
-            video=file_id,
-            caption=f"📌 {title}"
-        )
-
-
-# ---------------- MAIN ----------------
-def main():
-    app = Application.builder().token(BOT_TOKEN).build()
-
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    app.add_handler(CallbackQueryHandler(save_video))
-
-    print("TikTok Bot Running...")
-    app.run_polling()
-
-
-if __name__ == "__main__":
-    main()
+console.log("🚀 Bot is running...");
