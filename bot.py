@@ -10,9 +10,20 @@ MAX_DURATION = 180  # 3 minutes
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "Send a YouTube Shorts link.\nOnly videos up to 3 minutes are allowed."
-    )
+    text = """
+🎬 Welcome to Shorts Downloader Bot!
+
+━━━━━━━━━━━━━━
+📥 Download YouTube Shorts
+⚡ Fast Download Speed
+🎞 HD Quality Supported
+🗑 Auto File Delete
+🕒 Only videos up to 3 minutes
+━━━━━━━━━━━━━━
+
+🔗 Send your YouTube Shorts link now.
+"""
+    await update.message.reply_text(text)
 
 
 def get_video_info(url):
@@ -26,7 +37,9 @@ async def handle_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if "youtube.com" not in url and "youtu.be" not in url:
         return
 
-    msg = await update.message.reply_text("Checking video...")
+    msg = await update.message.reply_text(
+        "🔍 Analyzing your video...\n⏳ Please wait."
+    )
 
     try:
         info = get_video_info(url)
@@ -35,7 +48,9 @@ async def handle_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if duration > MAX_DURATION:
             await msg.edit_text(
-                "❌ Only YouTube Shorts or videos under 3 minutes are allowed."
+                "❌ Video Rejected!\n\n"
+                "🕒 Maximum allowed duration: 3 minutes.\n"
+                "🎬 Please send a YouTube Shorts link."
             )
             return
 
@@ -47,23 +62,35 @@ async def handle_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "quiet": True,
         }
 
-        await msg.edit_text("⬇️ Downloading...")
+        await msg.edit_text(
+            "⬇️ Downloading your Shorts...\n🚀 Processing video..."
+        )
 
         with YoutubeDL(ydl_opts) as ydl:
             ydl.download([url])
 
-        await msg.edit_text("📤 Uploading...")
+        await msg.edit_text(
+            "📤 Uploading to Telegram...\n✨ Almost done..."
+        )
 
         with open(unique_name, "rb") as video:
             await update.message.reply_video(video=video)
 
+        # Success message
+        await update.message.reply_text(
+            "✅ Download Complete!\n\n"
+            "🎬 Your video is ready.\n"
+            "📥 Send another Shorts link."
+        )
+
+        # Cleanup
         if os.path.exists(unique_name):
             os.remove(unique_name)
 
         await msg.delete()
 
     except Exception as e:
-        await msg.edit_text(f"Error: {str(e)}")
+        await msg.edit_text(f"❌ Error: {str(e)}")
 
 
 def main():
@@ -71,7 +98,7 @@ def main():
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(
-        MessageHandler(filters.TEXT & ~filters.COMMAND, handle_link)
+        MessageHandler(filters.TEXT & \~filters.COMMAND, handle_link)
     )
 
     print("Bot Started...")
