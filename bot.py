@@ -6,7 +6,7 @@ BOT_TOKEN = "8859975301:AAEqR6ut9U_Vh77slUhAj5RdbwQmt2OoTXk"
 ADMIN_ID = 8559227368
 PASSWORD = "352616"
 
-# ---------------- DATABASE ----------------
+# ---------------- DB ----------------
 conn = sqlite3.connect("database.db", check_same_thread=False)
 cursor = conn.cursor()
 
@@ -25,15 +25,15 @@ conn.commit()
 menu = ReplyKeyboardMarkup(
     [
         ["📁 Save Gallery", "📂 Show Memory"],
-        ["📂 Show Link", "📂 Show Photo"]
+        ["📂 Show Text", "📂 Show Photo"]
     ],
     resize_keyboard=True
 )
 
 
 # ---------------- AUTH ----------------
-def is_admin(user_id):
-    return user_id == ADMIN_ID
+def is_admin(uid):
+    return uid == ADMIN_ID
 
 
 def logged(context):
@@ -43,101 +43,84 @@ def logged(context):
 # ---------------- START ----------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
-        await update.message.reply_text("❌ Not authorized")
+        await update.message.reply_text("❌ Not allowed")
         return
 
     context.user_data["auth"] = False
     await update.message.reply_text("🔐 Enter password:")
 
 
-# ---------------- MAIN HANDLER ----------------
+# ---------------- LOGIN + MENU ----------------
 async def handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
 
     text = update.message.text
 
-    # -------- PASSWORD --------
+    # LOGIN
     if not logged(context):
         if text == PASSWORD:
             context.user_data["auth"] = True
-            await update.message.reply_text("✅ Login successful!", reply_markup=menu)
+            await update.message.reply_text("✅ Logged in", reply_markup=menu)
         else:
             await update.message.reply_text("❌ Wrong password")
         return
 
-    # -------- SAVE MODE --------
+    # ---------------- SAVE MODE ----------------
     if text == "📁 Save Gallery":
         context.user_data["save_mode"] = True
-        await update.message.reply_text(
-            "📥 Send video, photo or link.\nVoice system is OFF."
-        )
+        await update.message.reply_text("📥 Send video/photo/text to save")
         return
 
-    # -------- SHOW MEMORY (ORDERED) --------
+    # ---------------- SHOW MEMORY (FULL ORDER) ----------------
     if text == "📂 Show Memory":
-
-        # VIDEOS FIRST
+        # VIDEOS
         cursor.execute("SELECT file_id,text FROM storage WHERE type='video' ORDER BY id DESC")
         videos = cursor.fetchall()
 
-        # PHOTOS SECOND
+        for file_id, txt in videos:
+            await update.message.reply_video(file_id, caption=txt or "")
+
+        # PHOTOS
         cursor.execute("SELECT file_id,text FROM storage WHERE type='photo' ORDER BY id DESC")
         photos = cursor.fetchall()
 
-        # LINKS LAST
-        cursor.execute("SELECT text FROM storage WHERE type='link' ORDER BY id DESC")
-        links = cursor.fetchall()
+        for file_id, txt in photos:
+            await update.message.reply_photo(file_id, caption=txt or "")
 
-        if not videos and not photos and not links:
-            await update.message.reply_text("📭 Empty storage")
-            return
+        # LINKS (TEXT containing http)
+        cursor.execute("SELECT text FROM storage WHERE type='text' ORDER BY id DESC")
+        texts = cursor.fetchall()
 
-        await update.message.reply_text("🎬 VIDEOS:")
-        for f, t in videos:
-            await update.message.reply_video(f, caption=t or "")
-
-        await update.message.reply_text("🖼 PHOTOS:")
-        for f, t in photos:
-            await update.message.reply_photo(f, caption=t or "")
-
-        await update.message.reply_text("🔗 LINKS:")
-        for (t,) in links:
-            await update.message.reply_text(t)
+        for (t,) in texts:
+            if "http" in t:
+                await update.message.reply_text(f"🔗 {t}")
 
         return
 
-    # -------- SHOW LINKS ONLY --------
-    if text == "📂 Show Link":
-        cursor.execute("SELECT text FROM storage WHERE type='link' ORDER BY id DESC")
+    # ---------------- SHOW TEXT ONLY ----------------
+    if text == "📂 Show Text":
+        cursor.execute("SELECT text FROM storage WHERE type='text' ORDER BY id DESC")
         rows = cursor.fetchall()
-
-        if not rows:
-            await update.message.reply_text("No links found")
-            return
 
         for (t,) in rows:
             await update.message.reply_text(t)
 
         return
 
-    # -------- SHOW PHOTOS ONLY --------
+    # ---------------- SHOW PHOTO ONLY ----------------
     if text == "📂 Show Photo":
-        cursor.execute("SELECT file_id,text FROM storage WHERE type='photo' ORDER BY id DESC")
+        cursor.execute("SELECT file_id FROM storage WHERE type='photo' ORDER BY id DESC")
         rows = cursor.fetchall()
 
-        if not rows:
-            await update.message.reply_text("No photos found")
-            return
-
-        for f, t in rows:
-            await update.message.reply_photo(f, caption=t or "")
+        for (file_id,) in rows:
+            await update.message.reply_photo(file_id)
 
         return
 
 
 # ---------------- SAVE HANDLER ----------------
-async def save(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def save_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
 
@@ -151,26 +134,26 @@ async def save(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # VIDEO
     if msg.video:
-        cursor.execute("INSERT INTO storage(type,file_id,text) VALUES (?,?,?)",
-                       ("video", msg.video.file_id, "Video"))
+        cursor.execute("INSERT INTO storage VALUES (NULL,'video',?,?)",
+                       (msg.video.file_id, "Video"))
         conn.commit()
         await msg.reply_text("💾 Video saved")
         return
 
     # PHOTO
     if msg.photo:
-        cursor.execute("INSERT INTO storage(type,file_id,text) VALUES (?,?,?)",
-                       ("photo", msg.photo[-1].file_id, "Photo"))
+        cursor.execute("INSERT INTO storage VALUES (NULL,'photo',?,?)",
+                       (msg.photo[-1].file_id, "Photo"))
         conn.commit()
         await msg.reply_text("💾 Photo saved")
         return
 
-    # LINK (TEXT)
-    if msg.text and "http" in msg.text:
-        cursor.execute("INSERT INTO storage(type,file_id,text) VALUES (?,?,?)",
-                       ("link", "", msg.text))
+    # TEXT / LINK
+    if msg.text:
+        cursor.execute("INSERT INTO storage VALUES (NULL,'text','',?)",
+                       (msg.text,))
         conn.commit()
-        await msg.reply_text("💾 Link saved")
+        await msg.reply_text("💾 Text saved")
         return
 
 
@@ -179,8 +162,8 @@ def main():
     app = Application.builder().token(BOT_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.TEXT, handler))
-    app.add_handler(MessageHandler(filters.ALL, save))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handler))
+    app.add_handler(MessageHandler(filters.ALL, save_handler))
 
     print("Bot running...")
     app.run_polling()
