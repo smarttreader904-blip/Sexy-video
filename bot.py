@@ -10,7 +10,7 @@ MAX_DURATION = 180  # 3 minutes
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-text = """
+    text = """
 🎬 Welcome to Shorts Downloader Bot!
 
 ━━━━━━━━━━━━━━
@@ -23,7 +23,7 @@ text = """
 
 🔗 Send your YouTube Shorts link now.
 """
-await update.message.reply_text(text)
+    await update.message.reply_text(text)
 
 
 def get_video_info(url):
