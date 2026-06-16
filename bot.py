@@ -4,7 +4,7 @@ from telegram.ext import Application, CommandHandler, MessageHandler, ContextTyp
 
 BOT_TOKEN = "8859975301:AAEqR6ut9U_Vh77slUhAj5RdbwQmt2OoTXk"
 ADMIN_ID = 8559227368
-PASSWORD = "1234"
+PASSWORD = "352616"
 
 # ---------------- DATABASE ----------------
 conn = sqlite3.connect("database.db", check_same_thread=False)
