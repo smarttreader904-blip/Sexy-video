@@ -1,6 +1,7 @@
 const { Telegraf, Markup } = require("telegraf");
 const axios = require("axios");
 const { exec } = require("child_process");
+const fs = require("fs");
 const config = require("./config");
 
 const bot = new Telegraf(config.BOT_TOKEN);
@@ -8,7 +9,7 @@ const bot = new Telegraf(config.BOT_TOKEN);
 // memory
 const users = new Map();
 const userVideos = new Map();
-const savedMedia = new Map(); // NEW
+const savedMedia = new Map();
 
 /* ================= START ================= */
 bot.start(async (ctx) => {
@@ -52,7 +53,7 @@ TikTok / YouTube Shorts ভিডিও ডাউনলোড করতে ল�
 You can now use the bot. Send a TikTok or YouTube Shorts link 📥`
 );
 
-// MENU BUTTON
+// MENU
 ctx.reply(
 "📁 Menu:",
 Markup.keyboard([
@@ -61,7 +62,7 @@ Markup.keyboard([
 );
 });
 
-/* ================= VIDEO API (TIKTOK) ================= */
+/* ================= TIKTOK ================= */
 async function getTikTok(url) {
 try {
 const api = `https://www.tikwm.com/api/?url=${encodeURIComponent(url)}`;
@@ -75,23 +76,27 @@ audio: res.data.data.music
 }
 
 return null;
-
 } catch (err) {
 console.log("TikTok error:", err.message);
 return null;
 }
 }
 
-/* ================= YOUTUBE SHORTS ================= */
+/* ================= YOUTUBE DOWNLOAD (STABLE) ================= */
 function getYouTube(url, callback) {
-const cmd = `yt-dlp -f mp4 -g "${url}"`;
+const file = `yt_${Date.now()}.mp4`;
 
-exec(cmd, (err, stdout) => {
-if (err) return callback(null);
+const cmd = `yt-dlp -f "mp4/best" -o "${file}" "${url}"`;
 
-callback({
-video: stdout.trim()
-});
+exec(cmd, (err) => {
+if (err) {
+console.log("YT error:", err.message);
+return callback(null);
+}
+
+if (!fs.existsSync(file)) return callback(null);
+
+callback({ video: file });
 });
 }
 
@@ -106,6 +111,23 @@ if (users.get(id) !== "joined") {
 return ctx.reply("❌ Please join first and click I Joined button!");
 }
 
+/* ================= MENU ================= */
+if (url === "📁 Media Save Video") {
+const list = savedMedia.get(id);
+
+if (!list || list.length === 0) {
+return ctx.reply("❌ No saved media found!");
+}
+
+for (let i = 0; i < list.length; i++) {
+await ctx.replyWithVideo(list[i], {
+caption: `📁 Saved Video #${i + 1}`
+});
+}
+
+return;
+}
+
 /* ================= YOUTUBE ================= */
 if (url.includes("youtube.com") || url.includes("youtu.be")) {
 
@@ -116,7 +138,7 @@ if (!data?.video) return ctx.reply("❌ Failed to download!");
 
 userVideos.set(id, data);
 
-await ctx.replyWithVideo(data.video, {
+await ctx.replyWithVideo({ source: data.video }, {
 caption:
 "📥 Download Completed Successfully!\n🎬 YouTube Shorts Ready\n\n🎧 Want MP3? Click below",
 reply_markup: {
@@ -139,14 +161,12 @@ ctx.reply("⏳ Downloading TikTok video...");
 const data = await getTikTok(url);
 
 if (!data?.video) {
-return ctx.reply("❌ Failed to download video!");
+return ctx.reply("❌ Failed to download!");
 }
 
 userVideos.set(id, data);
 
-return ctx.replyWithVideo(
-{ url: data.video },
-{
+return ctx.replyWithVideo({ url: data.video }, {
 caption:
 "📥 Download Completed Successfully!\n🎬 Your video is ready to watch and save.\n\n🎧 Want only MP3? Click button below",
 reply_markup: {
@@ -157,8 +177,7 @@ inline_keyboard: [
 [{ text: "🟢 Need MP3", callback_data: "get_mp3" }]
 ]
 }
-}
-);
+});
 });
 
 /* ================= SAVE MEDIA ================= */
@@ -179,7 +198,7 @@ savedMedia.get(id).push(data.video);
 ctx.answerCbQuery("📌 Video saved successfully!");
 });
 
-/* ================= SHOW SAVED MEDIA ================= */
+/* ================= SHOW SAVED ================= */
 bot.hears("📁 Media Save Video", async (ctx) => {
 const id = ctx.from.id;
 const list = savedMedia.get(id);
@@ -200,15 +219,12 @@ bot.action("get_mp3", async (ctx) => {
 const data = userVideos.get(ctx.from.id);
 
 if (!data?.audio) {
-return ctx.reply("❌ No audio found! Send video again.");
+return ctx.reply("❌ No audio found!");
 }
 
-return ctx.replyWithAudio(
-{ url: data.audio },
-{
+return ctx.replyWithAudio({ url: data.audio }, {
 caption: "🎧 MP3 Downloaded Successfully!"
-}
-);
+});
 });
 
 /* ================= ERROR ================= */
