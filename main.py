@@ -1,23 +1,16 @@
 import asyncio
 
 from aiogram import Bot, Dispatcher, F
+from aiogram.types import Message, CallbackQuery
 from aiogram.filters import CommandStart
-from aiogram.types import (
-    Message,
-    CallbackQuery
-)
-from aiogram.fsm.context import FSMContext
 from aiogram.fsm.storage.memory import MemoryStorage
-from aiogram.fsm.state import (
-    State,
-    StatesGroup
-)
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
 
-from config import *
-from keyboards import *
-from database import *
+from config import BOT_TOKEN, ADMINS
+from database import add_user, create_db
 
-bot = Bot(BOT_TOKEN)
+bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
 
 
@@ -32,308 +25,200 @@ class AddMethodState(StatesGroup):
     method = State()
 
 
-class SupportState(StatesGroup):
-    waiting_message = State()
-
-
-class BroadcastState(StatesGroup):
-    waiting_message = State()
-
-
-class RejectState(StatesGroup):
-    waiting_reason = State()
-
-
-class ReplyState(StatesGroup):
-    waiting_reply = State()
-
-
-class EditCountryState(StatesGroup):
-    waiting_name = State()
-
-
-class EditMethodState(StatesGroup):
-    waiting_method = State()
-
-
 # =========================
-# START
+# START MESSAGE
 # =========================
 
 @dp.message(CommandStart())
 async def start_cmd(message: Message):
-
     await add_user(
         message.from_user.id,
         message.from_user.full_name,
         message.from_user.username
     )
 
+    keyboard = {
+        "inline_keyboard": [
+            [
+                {"text": "➕ Add Method", "callback_data": "add_method"},
+                {"text": "👑 Admin Panel", "callback_data": "admin_panel"}
+            ]
+        ]
+    }
+
     await message.answer(
-        START_TEXT,
-        reply_markup=start_menu()
+        "👋 Welcome to Method Bot",
+        reply_markup=keyboard
     )
-
-
-# =========================
-# BACK HOME
-# =========================
-
-@dp.callback_query(F.data == "back_home")
-async def back_home(call: CallbackQuery):
-
-    await call.message.edit_text(
-        START_TEXT,
-        reply_markup=start_menu()
-    )
-
-    await call.answer()
-
-
-# =========================
-# MENU BUILDER
-# =========================
-
-@dp.callback_query(F.data == "menu_builder")
-async def menu_builder_handler(call: CallbackQuery):
-
-    is_admin = call.from_user.id in ADMINS
-
-    await call.message.edit_text(
-        "📂 Menu Builder",
-        reply_markup=menu_builder_keyboard(
-            is_admin
-        )
-    )
-
-    await call.answer()
-
-
-# =========================
-# ADMIN PANEL
-# =========================
-
-@dp.callback_query(F.data == "admin_panel")
-async def admin_panel(call: CallbackQuery):
-
-    if call.from_user.id not in ADMINS:
-        return await call.answer(
-            "Access Denied",
-            show_alert=True
-        )
-
-    await call.message.edit_text(
-        "👑 Admin Panel",
-        reply_markup=admin_panel_keyboard()
-    )
-
-    await call.answer()
-
-
-# =========================
-# STATISTICS
-# =========================
-
-@dp.callback_query(F.data == "statistics")
-async def statistics_handler(
-        call: CallbackQuery
-):
-
-    if call.from_user.id not in ADMINS:
-        return
-
-    stats = await get_statistics()
-
-    text = (
-        f"📊 Statistics\n\n"
-        f"👤 Total Users: {stats['users']}\n"
-        f"🌍 Total Countries: {stats['countries']}\n"
-        f"📄 Total Methods: {stats['methods']}\n"
-        f"📥 Pending Requests: {stats['pending']}"
-    )
-
-    await call.message.edit_text(
-        text,
-        reply_markup=admin_panel_keyboard()
-    )
-
-    await call.answer()
-
-
-# =========================
-# PLATFORM VIEW
-# =========================
-
-@dp.callback_query(
-    F.data.startswith("platform_")
-)
-async def platform_view(
-        call: CallbackQuery
-):
-
-    platform = call.data.split("_")[1]
-
-    countries = await get_countries(
-        platform
-    )
-
-    if not countries:
-
-        await call.message.edit_text(
-            f"❌ No country found for {platform}",
-            reply_markup=back_keyboard()
-        )
-
-        return
-
-    await call.message.edit_text(
-        f"🌍 {platform} Countries",
-        reply_markup=
-        countries_list_keyboard(
-            countries
-        )
-    )
-
-    await call.answer()
 
 
 # =========================
 # ADD METHOD BUTTON
 # =========================
 
-@dp.callback_query(
-    F.data == "add_method"
-)
-async def add_method_button(
-        call: CallbackQuery
-):
+@dp.callback_query(F.data == "add_method")
+async def add_method(call: CallbackQuery, state: FSMContext):
+
+    await state.set_state(AddMethodState.platform)
+
+    keyboard = {
+        "inline_keyboard": [
+            [
+                {"text": "Telegram", "callback_data": "platform_Telegram"},
+                {"text": "WhatsApp", "callback_data": "platform_WhatsApp"}
+            ],
+            [
+                {"text": "Facebook", "callback_data": "platform_Facebook"},
+                {"text": "TikTok", "callback_data": "platform_TikTok"}
+            ]
+        ]
+    }
 
     await call.message.edit_text(
-        ADD_METHOD_TEXT,
-        reply_markup=platform_keyboard()
+        "📱 Select Platform",
+        reply_markup=keyboard
     )
 
-    await call.answer()
-  # =========================
-# ADD METHOD - PLATFORM
+
+# =========================
+# ADMIN PANEL BUTTON
 # =========================
 
-@dp.callback_query(
-    F.data.startswith("addplatform_")
-)
-async def select_platform(
-        call: CallbackQuery,
-        state: FSMContext
-):
+@dp.callback_query(F.data == "admin_panel")
+async def admin_panel(call: CallbackQuery):
 
-    platform = call.data.replace(
-        "addplatform_",
-        ""
-    )
+    if call.from_user.id not in ADMINS:
+        return await call.answer("Access Denied", show_alert=True)
 
-    await state.update_data(
-        platform=platform
-    )
-
-    await state.set_state(
-        AddMethodState.country
-    )
+    keyboard = {
+        "inline_keyboard": [
+            [
+                {"text": "📊 Statistics", "callback_data": "statistics"}
+            ],
+            [
+                {"text": "📥 Pending Requests", "callback_data": "pending"}
+            ],
+            [
+                {"text": "📢 Broadcast", "callback_data": "broadcast"}
+            ]
+        ]
+    }
 
     await call.message.edit_text(
-        SELECT_COUNTRY_TEXT,
-        reply_markup=country_keyboard()
+        "👑 Admin Panel",
+        reply_markup=keyboard
     )
 
-    await call.answer()
+
+# =========================
+# PLACEHOLDER (NEXT PART)
+# =========================
+
+@dp.callback_query(F.data == "statistics")
+async def stats(call: CallbackQuery):
+    await call.answer("Coming in next part", show_alert=True)
+
+
+@dp.callback_query(F.data == "pending")
+async def pending(call: CallbackQuery):
+    await call.answer("Coming in next part", show_alert=True)
+
+
+@dp.callback_query(F.data == "broadcast")
+async def broadcast(call: CallbackQuery):
+    await call.answer("Coming in next part", show_alert=True)
+
+
+# =========================
+# START BOT
+# =========================
+
+async def main():
+    await create_db()
+    print("Bot Started...")
+    await dp.start_polling(bot)
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
+    from aiogram.fsm.context import FSMContext
+from aiogram.types import CallbackQuery, Message
+
+from config import DEFAULT_COUNTRIES
+from database import add_method, add_pending_request
+
+
+# =========================
+# PLATFORM SELECT
+# =========================
+
+@dp.callback_query(F.data.startswith("platform_"))
+async def select_platform(call: CallbackQuery, state: FSMContext):
+
+    platform = call.data.split("_")[1]
+
+    await state.update_data(platform=platform)
+    await state.set_state(AddMethodState.country)
+
+    keyboard = {
+        "inline_keyboard": [
+            [{"text": c, "callback_data": f"country_{c}"}]
+            for c in DEFAULT_COUNTRIES
+        ]
+    }
+
+    await call.message.edit_text(
+        "🌍 Select Country",
+        reply_markup=keyboard
+    )
 
 
 # =========================
 # COUNTRY SELECT
 # =========================
 
-@dp.callback_query(
-    F.data.startswith("country_")
-)
-async def select_country(
-        call: CallbackQuery,
-        state: FSMContext
-):
+@dp.callback_query(F.data.startswith("country_"))
+async def select_country(call: CallbackQuery, state: FSMContext):
 
-    country = call.data.replace(
-        "country_",
-        ""
-    )
+    country = call.data.split("_")[1]
 
+    # Others case
     if country == "Others":
-
-        await state.set_state(
-            AddMethodState.custom_country
-        )
-
-        await call.message.edit_text(
-            CUSTOM_COUNTRY_TEXT
-        )
-
+        await state.set_state(AddMethodState.custom_country)
+        await call.message.edit_text("✏️ Send country name:")
         return
 
-    await state.update_data(
-        country=country
-    )
+    await state.update_data(country=country)
+    await state.set_state(AddMethodState.method)
 
-    await state.set_state(
-        AddMethodState.method
-    )
-
-    await call.message.edit_text(
-        SEND_METHOD_TEXT
-    )
-
-    await call.answer()
+    await call.message.edit_text("📝 Send your method:")
 
 
 # =========================
-# CUSTOM COUNTRY
+# CUSTOM COUNTRY INPUT
 # =========================
 
-@dp.message(
-    AddMethodState.custom_country
-)
-async def custom_country_handler(
-        message: Message,
-        state: FSMContext
-):
+@dp.message(AddMethodState.custom_country)
+async def custom_country(message: Message, state: FSMContext):
 
-    await state.update_data(
-        country=message.text
-    )
+    await state.update_data(country=message.text)
+    await state.set_state(AddMethodState.method)
 
-    await state.set_state(
-        AddMethodState.method
-    )
-
-    await message.answer(
-        SEND_METHOD_TEXT
-    )
+    await message.answer("📝 Send your method:")
 
 
 # =========================
-# METHOD SUBMIT
+# METHOD INPUT (USER SEND)
 # =========================
 
-@dp.message(
-    AddMethodState.method
-)
-async def submit_method(
-        message: Message,
-        state: FSMContext
-):
+@dp.message(AddMethodState.method)
+async def receive_method(message: Message, state: FSMContext):
 
     data = await state.get_data()
 
     platform = data["platform"]
     country = data["country"]
-    method_text = message.text
-
+    method = message.text
     user_id = message.from_user.id
 
     # =====================
@@ -342,378 +227,255 @@ async def submit_method(
 
     if user_id in ADMINS:
 
-        country_id = (
-            await create_country_if_not_exists(
-                platform,
-                country
-            )
-        )
+        await add_method(platform, country, method, user_id)
 
-        await add_method(
-            platform,
-            country_id,
-            method_text,
-            user_id
-        )
-
-        await message.answer(
-            "✅ Method Added Successfully."
-        )
-
-        # notify all users
-
-        users = await get_all_users()
-
-        for user in users:
-
-            try:
-                await bot.send_message(
-                    user[0],
-                    NEW_METHOD_NOTIFICATION
-                )
-            except:
-                pass
+        await message.answer("✅ Method added successfully (Admin)")
 
         await state.clear()
-
         return
 
     # =====================
-    # USER REQUEST
+    # USER → PENDING REQUEST
     # =====================
 
     await add_pending_request(
         user_id,
         platform,
         country,
-        method_text
+        method
     )
 
-    await message.answer(
-        "✅ Method request submitted.\n\nWaiting for admin approval."
-    )
-
-    # send to admins
-
-    pending = await get_pending_requests()
-
-    request_id = pending[0][0]
-
-    admin_text = (
-        f"🆕 New Method Request\n\n"
-        f"📱 Platform: {platform}\n"
-        f"🌍 Country: {country}\n\n"
-        f"📄 Method:\n"
-        f"{method_text}\n\n"
-        f"👤 User: {message.from_user.full_name}\n"
-        f"🔗 Username: @{message.from_user.username}\n"
-        f"🆔 Chat ID: {user_id}"
-    )
-
-    for admin in ADMINS:
-
-        try:
-            await bot.send_message(
-                admin,
-                admin_text,
-                reply_markup=
-                approval_keyboard(
-                    request_id
-                )
-            )
-        except:
-            pass
+    await message.answer("⏳ Sent for admin approval")
 
     await state.clear()
+    from aiogram.fsm.context import FSMContext
+from aiogram.types import CallbackQuery, Message
 
-
-# =========================
-# PENDING REQUESTS
-# =========================
-
-@dp.callback_query(
-    F.data == "pending_requests"
+from database import (
+    get_pending_requests,
+    get_pending_request,
+    approve_request,
+    reject_request,
+    add_method
 )
-async def pending_requests_handler(
-        call: CallbackQuery
-):
+
+
+# =========================
+# VIEW PENDING REQUESTS
+# =========================
+
+@dp.callback_query(F.data == "pending")
+async def show_pending(call: CallbackQuery):
 
     if call.from_user.id not in ADMINS:
-        return
+        return await call.answer("Access Denied", show_alert=True)
 
-    requests = (
-        await get_pending_requests()
-    )
+    requests = await get_pending_requests()
 
     if not requests:
+        return await call.message.edit_text("📭 No pending requests")
 
-        await call.message.edit_text(
-            "📭 No pending requests."
-        )
-
-        return
-
-    for req in requests:
-
-        request_id = req[0]
-        user_id = req[1]
-        platform = req[2]
-        country = req[3]
-        method_text = req[4]
+    for r in requests:
+        req_id = r[0]
+        user_id = r[1]
+        platform = r[2]
+        country = r[3]
+        method = r[4]
 
         text = (
-            f"🆕 Pending Request\n\n"
+            f"🆕 Request ID: {req_id}\n\n"
             f"📱 Platform: {platform}\n"
             f"🌍 Country: {country}\n\n"
-            f"📄 Method:\n"
-            f"{method_text}\n\n"
-            f"🆔 User ID: {user_id}"
+            f"📄 Method:\n{method}\n\n"
+            f"👤 User ID: {user_id}"
         )
 
-        await call.message.answer(
-            text,
-            reply_markup=
-            approval_keyboard(
-                request_id
-            )
-        )
+        keyboard = {
+            "inline_keyboard": [
+                [
+                    {"text": "✅ Accept", "callback_data": f"accept_{req_id}"},
+                    {"text": "❌ Reject", "callback_data": f"reject_{req_id}"}
+                ]
+            ]
+        }
 
-    await call.answer()
+        await call.message.answer(text, reply_markup=keyboard)
 
 
 # =========================
 # ACCEPT REQUEST
 # =========================
 
-@dp.callback_query(
-    F.data.startswith("accept_")
-)
-async def accept_request(
-        call: CallbackQuery
-):
+@dp.callback_query(F.data.startswith("accept_"))
+async def accept_request(call: CallbackQuery):
 
     if call.from_user.id not in ADMINS:
-        return
+        return await call.answer("Denied", show_alert=True)
 
-    request_id = int(
-        call.data.split("_")[1]
-    )
+    req_id = int(call.data.split("_")[1])
 
-    request = await get_pending_request(
-        request_id
-    )
+    req = await get_pending_request(req_id)
 
-    if not request:
-        return
+    if not req:
+        return await call.answer("Not found")
 
-    user_id = request[1]
-    platform = request[2]
-    country = request[3]
-    method_text = request[4]
+    user_id = req[1]
+    platform = req[2]
+    country = req[3]
+    method = req[4]
 
-    country_id = (
-        await create_country_if_not_exists(
-            platform,
-            country
-        )
-    )
+    # save method
+    await add_method(platform, country, method, user_id)
 
-    await add_method(
-        platform,
-        country_id,
-        method_text,
-        user_id
-    )
+    await approve_request(req_id)
 
-    await approve_request(
-        request_id
-    )
-
-    await call.message.edit_text(
-        "✅ Request Approved."
-    )
-
-    # notify submitter
-
+    # notify user
     try:
         await bot.send_message(
             user_id,
-            "✅ Your method has been approved."
+            "✅ Your method has been approved!"
         )
     except:
         pass
 
-    # notify all users
-
-    users = await get_all_users()
-
-    for user in users:
-
-        try:
-            await bot.send_message(
-                user[0],
-                NEW_METHOD_NOTIFICATION
-            )
-        except:
-            pass
-
-    await call.answer()
+    await call.message.edit_text("✅ Approved")
 
 
 # =========================
-# REJECT REQUEST
+# REJECT START
 # =========================
 
-@dp.callback_query(
-    F.data.startswith("reject_")
-)
-async def reject_request_handler(
-        call: CallbackQuery,
-        state: FSMContext
-):
+class RejectState(StatesGroup):
+    reason = State()
+
+
+@dp.callback_query(F.data.startswith("reject_"))
+async def reject_start(call: CallbackQuery, state: FSMContext):
 
     if call.from_user.id not in ADMINS:
-        return
+        return await call.answer("Denied", show_alert=True)
 
-    request_id = int(
-        call.data.split("_")[1]
-    )
+    req_id = int(call.data.split("_")[1])
 
-    await state.update_data(
-        request_id=request_id
-    )
+    await state.update_data(req_id=req_id)
+    await state.set_state(RejectState.reason)
 
-    await state.set_state(
-        RejectState.waiting_reason
-    )
+    await call.message.answer("❌ Send reject reason:")
 
-    await call.message.answer(
-        REJECT_REASON_TEXT
-    )
 
-    await call.answer()
-  # =========================
-# REJECT REASON COMPLETE
+# =========================
+# REJECT REASON SAVE
 # =========================
 
-@dp.message(
-    RejectState.waiting_reason
-)
-async def reject_reason_complete(
-        message: Message,
-        state: FSMContext
-):
+@dp.message(RejectState.reason)
+async def reject_reason(message: Message, state: FSMContext):
 
     data = await state.get_data()
+    req_id = data["req_id"]
 
-    request_id = data.get(
-        "request_id"
-    )
+    req = await get_pending_request(req_id)
 
-    request = await get_pending_request(
-        request_id
-    )
+    if not req:
+        await message.answer("Not found")
+        return await state.clear()
 
-    if not request:
+    user_id = req[1]
 
-        await message.answer(
-            "❌ Request not found."
-        )
+    await reject_request(req_id)
 
-        await state.clear()
-        return
-
-    user_id = request[1]
-
-    reason = message.text
-
-    await reject_request(
-        request_id
-    )
-
+    # notify user
     try:
         await bot.send_message(
             user_id,
-            f"❌ Your method request was rejected.\n\n"
-            f"Reason:\n{reason}"
+            f"❌ Rejected\nReason: {message.text}"
         )
     except:
         pass
 
-    await message.answer(
-        "✅ Request rejected successfully."
-    )
+    await message.answer("❌ Request rejected")
 
     await state.clear()
+    from aiogram.fsm.state import State, StatesGroup
+from aiogram.fsm.context import FSMContext
+from aiogram.types import CallbackQuery, Message
 
-
-# =========================
-# BROADCAST BUTTON
-# =========================
-
-@dp.callback_query(
-    F.data == "broadcast"
+from database import (
+    get_all_users,
+    get_statistics,
+    add_broadcast_history,
+    add_support_message
 )
-async def broadcast_button(
-        call: CallbackQuery,
-        state: FSMContext
-):
+
+
+# =========================
+# STATISTICS
+# =========================
+
+@dp.callback_query(F.data == "statistics")
+async def statistics(call: CallbackQuery):
 
     if call.from_user.id not in ADMINS:
-        return
+        return await call.answer("Denied", show_alert=True)
 
-    await state.set_state(
-        BroadcastState.waiting_message
+    stats = await get_statistics()
+
+    text = (
+        "📊 Statistics\n\n"
+        f"👤 Users: {stats['users']}\n"
+        f"🌍 Countries: {stats['countries']}\n"
+        f"📄 Methods: {stats['methods']}\n"
+        f"⏳ Pending: {stats['pending']}"
     )
 
-    await call.message.answer(
-        BROADCAST_TEXT
-    )
+    await call.message.edit_text(text)
 
-    await call.answer()
+
+# =========================
+# BROADCAST STATE
+# =========================
+
+class BroadcastState(StatesGroup):
+    message = State()
+
+
+# =========================
+# BROADCAST START
+# =========================
+
+@dp.callback_query(F.data == "broadcast")
+async def broadcast_start(call: CallbackQuery, state: FSMContext):
+
+    if call.from_user.id not in ADMINS:
+        return await call.answer("Denied", show_alert=True)
+
+    await state.set_state(BroadcastState.message)
+
+    await call.message.answer("📢 Send broadcast message:")
 
 
 # =========================
 # BROADCAST SEND
 # =========================
 
-@dp.message(
-    BroadcastState.waiting_message
-)
-async def broadcast_send(
-        message: Message,
-        state: FSMContext
-):
-
-    if message.from_user.id not in ADMINS:
-        return
-
-    text = message.text
+@dp.message(BroadcastState.message)
+async def broadcast_send(message: Message, state: FSMContext):
 
     users = await get_all_users()
 
     sent = 0
     failed = 0
 
-    for user in users:
-
+    for u in users:
         try:
-            await bot.send_message(
-                user[0],
-                text
-            )
-
+            await bot.send_message(u[0], message.text)
             sent += 1
-
         except:
             failed += 1
 
-    await add_broadcast_history(
-        text
-    )
+    await add_broadcast_history(message.text)
 
     await message.answer(
-        f"📢 Broadcast Completed\n\n"
+        f"📢 Broadcast Done\n\n"
         f"✅ Sent: {sent}\n"
         f"❌ Failed: {failed}"
     )
@@ -722,478 +484,61 @@ async def broadcast_send(
 
 
 # =========================
-# SUPPORT BUTTON
+# SUPPORT SYSTEM
 # =========================
 
-@dp.callback_query(
-    F.data == "support"
-)
-async def support_button(
-        call: CallbackQuery,
-        state: FSMContext
-):
-
-    await state.set_state(
-        SupportState.waiting_message
-    )
-
-    await call.message.answer(
-        SUPPORT_TEXT
-    )
-
-    await call.answer()
+class SupportState(StatesGroup):
+    message = State()
 
 
-# =========================
-# SUPPORT MESSAGE
-# =========================
+# USER SEND SUPPORT
+@dp.callback_query(F.data == "support")
+async def support_start(call: CallbackQuery, state: FSMContext):
 
-@dp.message(
-    SupportState.waiting_message
-)
-async def support_message_handler(
-        message: Message,
-        state: FSMContext
-):
+    await state.set_state(SupportState.message)
+
+    await call.message.answer("🛠 Send your problem:")
+
+
+@dp.message(SupportState.message)
+async def support_send(message: Message, state: FSMContext):
 
     user_id = message.from_user.id
 
-    text = message.text
+    await add_support_message(user_id, message.text)
 
-    await add_support_message(
-        user_id,
-        text
-    )
-
-    admin_text = (
-        f"📨 Support Request\n\n"
-        f"👤 User: "
-        f"{message.from_user.full_name}\n"
-        f"🔗 Username: "
-        f"@{message.from_user.username}\n"
-        f"🆔 Chat ID: "
-        f"{user_id}\n\n"
-        f"💬 Message:\n"
-        f"{text}"
-    )
-
+    # send to admin
     for admin in ADMINS:
 
         try:
             await bot.send_message(
                 admin,
-                admin_text,
-                reply_markup=
-                support_reply_keyboard(
-                    user_id
-                )
+                f"🛠 Support Request\n\n"
+                f"User: {message.from_user.full_name}\n"
+                f"ID: {user_id}\n\n"
+                f"{message.text}"
             )
         except:
             pass
 
-    await message.answer(
-        "✅ Your message has been sent to support."
-    )
+    await message.answer("✅ Sent to admin")
 
     await state.clear()
 
 
 # =========================
-# ADMIN REPLY BUTTON
-# =========================
-
-@dp.callback_query(
-    F.data.startswith("reply_")
-)
-async def admin_reply_button(
-        call: CallbackQuery,
-        state: FSMContext
-):
-
-    if call.from_user.id not in ADMINS:
-        return
-
-    user_id = int(
-        call.data.split("_")[1]
-    )
-
-    await state.update_data(
-        reply_user=user_id
-    )
-
-    await state.set_state(
-        ReplyState.waiting_reply
-    )
-
-    await call.message.answer(
-        REPLY_TEXT
-    )
-
-    await call.answer()
-
-
-# =========================
-# ADMIN SEND REPLY
-# =========================
-
-@dp.message(
-    ReplyState.waiting_reply
-)
-async def admin_send_reply(
-        message: Message,
-        state: FSMContext
-):
-
-    if message.from_user.id not in ADMINS:
-        return
-
-    data = await state.get_data()
-
-    user_id = data.get(
-        "reply_user"
-    )
-
-    reply_text = message.text
-
-    try:
-
-        await bot.send_message(
-            user_id,
-            f"💬 Support Reply\n\n"
-            f"{reply_text}",
-            reply_markup=
-            support_reply_keyboard(
-                user_id
-            )
-        )
-
-        await add_support_message(
-            user_id,
-            f"ADMIN: {reply_text}"
-        )
-
-        await message.answer(
-            "✅ Reply sent."
-        )
-
-    except Exception as e:
-
-        await message.answer(
-            f"❌ Failed:\n{e}"
-        )
-
-    await state.clear()
-  # =========================
-# USER REPLY TO SUPPORT
-# =========================
-
-@dp.callback_query(
-    F.data.startswith("reply_")
-)
-async def user_reply_button(
-        call: CallbackQuery,
-        state: FSMContext
-):
-
-    if call.from_user.id in ADMINS:
-        return
-
-    await state.set_state(
-        SupportState.waiting_message
-    )
-
-    await call.message.answer(
-        "💬 Please send your reply."
-    )
-
-    await call.answer()
-
-
-# =========================
-# VIEW COUNTRY METHODS
-# =========================
-
-@dp.callback_query(
-    F.data.startswith("viewcountry_")
-)
-async def view_country_methods(
-        call: CallbackQuery
-):
-
-    country_id = int(
-        call.data.split("_")[1]
-    )
-
-    methods = await get_methods(
-        country_id
-    )
-
-    country = await get_country(
-        country_id
-    )
-
-    if not methods:
-
-        await call.message.edit_text(
-            "❌ No methods found.",
-            reply_markup=
-            back_keyboard()
-        )
-
-        return
-
-    await call.message.answer(
-        f"🌍 Country: {country[2]}"
-    )
-
-    for method in methods:
-
-        method_id = method[0]
-        method_text = method[1]
-
-        if call.from_user.id in ADMINS:
-
-            await call.message.answer(
-                f"📄 Method ID: {method_id}\n\n"
-                f"{method_text}",
-                reply_markup=
-                method_manage_keyboard(
-                    method_id
-                )
-            )
-
-        else:
-
-            await call.message.answer(
-                method_text
-            )
-
-    if call.from_user.id in ADMINS:
-
-        await call.message.answer(
-            "⚙ Country Management",
-            reply_markup=
-            country_manage_keyboard(
-                country_id
-            )
-        )
-
-    await call.answer()
-
-
-# =========================
-# EDIT COUNTRY
-# =========================
-
-@dp.callback_query(
-    F.data.startswith(
-        "editcountry_"
-    )
-)
-async def edit_country_button(
-        call: CallbackQuery,
-        state: FSMContext
-):
-
-    if call.from_user.id not in ADMINS:
-        return
-
-    country_id = int(
-        call.data.split("_")[1]
-    )
-
-    await state.update_data(
-        country_id=country_id
-    )
-
-    await state.set_state(
-        EditCountryState.waiting_name
-    )
-
-    await call.message.answer(
-        "✏️ Send new country name."
-    )
-
-    await call.answer()
-
-
-@dp.message(
-    EditCountryState.waiting_name
-)
-async def save_country_edit(
-        message: Message,
-        state: FSMContext
-):
-
-    data = await state.get_data()
-
-    country_id = data["country_id"]
-
-    await edit_country(
-        country_id,
-        message.text
-    )
-
-    await message.answer(
-        "✅ Country updated."
-    )
-
-    await state.clear()
-
-
-# =========================
-# DELETE COUNTRY
-# =========================
-
-@dp.callback_query(
-    F.data.startswith(
-        "deletecountry_"
-    )
-)
-async def delete_country_handler(
-        call: CallbackQuery
-):
-
-    if call.from_user.id not in ADMINS:
-        return
-
-    country_id = int(
-        call.data.split("_")[1]
-    )
-
-    await delete_country(
-        country_id
-    )
-
-    await call.message.edit_text(
-        "✅ Country deleted."
-    )
-
-    await call.answer()
-
-
-# =========================
-# EDIT METHOD
-# =========================
-
-@dp.callback_query(
-    F.data.startswith(
-        "editmethod_"
-    )
-)
-async def edit_method_button(
-        call: CallbackQuery,
-        state: FSMContext
-):
-
-    if call.from_user.id not in ADMINS:
-        return
-
-    method_id = int(
-        call.data.split("_")[1]
-    )
-
-    await state.update_data(
-        method_id=method_id
-    )
-
-    await state.set_state(
-        EditMethodState.waiting_method
-    )
-
-    await call.message.answer(
-        "✏️ Send new method."
-    )
-
-    await call.answer()
-
-
-@dp.message(
-    EditMethodState.waiting_method
-)
-async def save_method_edit(
-        message: Message,
-        state: FSMContext
-):
-
-    data = await state.get_data()
-
-    method_id = data["method_id"]
-
-    await edit_method(
-        method_id,
-        message.text
-    )
-
-    await message.answer(
-        "✅ Method updated."
-    )
-
-    await state.clear()
-
-
-# =========================
-# DELETE METHOD
-# =========================
-
-@dp.callback_query(
-    F.data.startswith(
-        "deletemethod_"
-    )
-)
-async def delete_method_handler(
-        call: CallbackQuery
-):
-
-    if call.from_user.id not in ADMINS:
-        return
-
-    method_id = int(
-        call.data.split("_")[1]
-    )
-
-    await delete_method(
-        method_id
-    )
-
-    await call.message.edit_text(
-        "✅ Method deleted."
-    )
-
-    await call.answer()
-
-
-# =========================
-# STARTUP
-# =========================
-
-async def on_startup():
-
-    await create_db()
-
-    print(
-        "Database Ready"
-    )
-
-
-# =========================
-# MAIN
+# BOT RUNNER
 # =========================
 
 async def main():
 
-    await on_startup()
+    await create_db()
 
-    print(
-        "Bot Started..."
-    )
+    print("Bot Started Successfully 🚀")
 
-    await dp.start_polling(
-        bot
-    )
+    await dp.start_polling(bot)
 
 
 if __name__ == "__main__":
-    asyncio.run(
-        main()
-  )
+    asyncio.run(main())
+    
